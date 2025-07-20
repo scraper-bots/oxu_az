@@ -1110,32 +1110,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Cloud Providers**: AWS, Azure, Google Cloud Platform
 - **Trading Community**: QuantConnect, Zipline, PyAlgoTrade communities
 
-## 📞 Contact & Support
-
-**Ismat Samadov**
-- 🐙 GitHub: [@Ismat-Samadov](https://github.com/Ismat-Samadov)
-- 📧 Email: ismat.samadov@example.com
-- 💼 LinkedIn: [Ismat Samadov](https://linkedin.com/in/ismat-samadov)
-- 📱 Twitter: [@ismat_samadov](https://twitter.com/ismat_samadov)
-
-### Getting Help
-
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/Ismat-Samadov/investment_bot/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/Ismat-Samadov/investment_bot/discussions)
-- 📖 **Documentation**: [Wiki](https://github.com/Ismat-Samadov/investment_bot/wiki)
-- 💡 **Feature Requests**: [Feature Request Template](https://github.com/Ismat-Samadov/investment_bot/issues/new?template=feature_request.md)
-
-### Community
-
-- 📱 **Telegram Group**: [Investment Bot Community](https://t.me/investment_bot_community)
-- 💬 **Discord Server**: [Join our Discord](https://discord.gg/investment-bot)
-- 📺 **YouTube Channel**: [Tutorial Videos](https://youtube.com/@investment-bot-tutorials)
-
-## 🔗 Related Projects
-
-- [Speech Emotion Recognition](https://github.com/Ismat-Samadov/Speech_Emotion_Recognition)
-- [DeepSeek Azerbaijani Fine-tuning](https://github.com/Ismat-Samadov/deepseek_AZE)
-- [Named Entity Recognition](https://github.com/Ismat-Samadov/Named_Entity_Recognition)
 
 ---
 
