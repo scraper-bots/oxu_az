@@ -429,7 +429,7 @@ class CompleteBankerExtractor:
         
         return article
     
-    async def scrape_category_pages(self, category_url: str, max_pages: int = 100) -> List[Dict]:
+    async def scrape_category_pages(self, category_url: str, max_pages: int = 6800) -> List[Dict]:
         """Scrape multiple category pages with enhanced extraction."""
         page_urls = []
         
@@ -520,37 +520,28 @@ async def extract_all_banker_news_complete():
     print("• MAXIMUM SCRAPING - all available pages and articles")
     print()
     
-    # Categories to scrape
-    categories = [
-        "https://banker.az/category/x%c9%99b%c9%99rl%c9%99r/",      # News/Reports
-        "https://banker.az/category/iqtisadiyyat/",                # Economy  
-        "https://banker.az/category/dovl%c9%99t/",                 # Government
-        "https://banker.az/category/siyaset/",                     # Politics
-    ]
+    # Single category to scrape - ALL pages, ALL articles
+    single_category_url = "https://banker.az/category/x%c9%99b%c9%99rl%c9%99r/"
     
-    max_pages = 100   # Per category (will auto-stop when no more content found)
-    max_articles = 1000   # Extract content for all articles found (no practical limit)
+    max_pages = 6800   # NO LIMIT - will auto-stop when no more content found
+    max_articles = 1000000   # NO LIMIT - extract ALL articles found
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     async with CompleteBankerExtractor() as extractor:
         logger.info("🚀 Starting COMPLETE extraction...")
         
-        # Step 1: Extract enhanced news lists
-        all_news_items = []
+        # Step 1: Extract ALL news from single category
+        logger.info(f"📰 Processing single category: {single_category_url}")
+        all_news_items = await extractor.scrape_category_pages(single_category_url, max_pages)
         
-        for category_url in categories:
-            logger.info(f"📰 Processing category: {category_url}")
-            category_news = await extractor.scrape_category_pages(category_url, max_pages)
-            
-            # Add source category
-            category_name = category_url.split('/')[-2] if category_url.endswith('/') else category_url.split('/')[-1]
-            for item in category_news:
-                item['source_category_url'] = category_url
-                item['source_category_name'] = category_name
-            
-            all_news_items.extend(category_news)
-            logger.info(f"✅ {category_name}: {len(category_news)} articles")
+        # Add source category info
+        category_name = single_category_url.split('/')[-2] if single_category_url.endswith('/') else single_category_url.split('/')[-1]
+        for item in all_news_items:
+            item['source_category_url'] = single_category_url
+            item['source_category_name'] = category_name
+        
+        logger.info(f"✅ {category_name}: {len(all_news_items)} articles")
         
         # Remove duplicates
         unique_news = []
@@ -562,19 +553,18 @@ async def extract_all_banker_news_complete():
         
         logger.info(f"📊 Total unique articles found: {len(unique_news)}")
         
-        # Step 2: Extract COMPLETE article content for ALL articles
-        articles_to_extract = unique_news[:max_articles] if max_articles < len(unique_news) else unique_news
-        logger.info(f"📖 Extracting COMPLETE content for {len(articles_to_extract)} articles...")
+        # Step 2: Extract COMPLETE content for ALL articles (no limit)
+        logger.info(f"📖 Extracting COMPLETE content for ALL {len(unique_news)} articles...")
         
-        article_urls = [item['url'] for item in articles_to_extract]
+        article_urls = [item['url'] for item in unique_news]
         complete_articles = await extractor.scrape_articles_complete(article_urls)
         
         # Merge list data with complete content
         final_articles = []
         for i, complete_article in enumerate(complete_articles):
-            if i < len(articles_to_extract):
+            if i < len(unique_news):
                 # Merge list data with article data (article data takes priority)
-                merged = {**articles_to_extract[i], **complete_article}
+                merged = {**unique_news[i], **complete_article}
                 final_articles.append(merged)
         
         # Step 3: Generate summary and create single comprehensive file
@@ -590,7 +580,7 @@ async def extract_all_banker_news_complete():
                 'extraction_timestamp': datetime.now().isoformat(),
                 'total_news_items': len(unique_news),
                 'complete_articles': len(final_articles),
-                'categories_processed': len(categories),
+                'single_category_processed': single_category_url,
                 'categories_found': sorted(list(categories_found)),
                 'sources_found': sorted(list(sources_found)),
                 'authors_found': sorted(list(authors_found)),
@@ -600,9 +590,9 @@ async def extract_all_banker_news_complete():
                     'avg_reading_time': sum(item.get('reading_time_minutes', 0) for item in final_articles) / len(final_articles) if final_articles else 0,
                 },
                 'extraction_config': {
-                    'max_pages_per_category': max_pages,
-                    'max_articles_complete_extraction': max_articles,
-                    'categories_scraped': categories
+                    'max_pages': max_pages,
+                    'max_articles': max_articles,
+                    'single_category_scraped': single_category_url
                 }
             },
             'news_list': unique_news,
