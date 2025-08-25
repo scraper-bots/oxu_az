@@ -1,3 +1,1 @@
-aiohttp>=3.8.0
-beautifulsoup4>=4.9.3
-lxml>=4.6.3
+pip install aiohttp beautifulsoup4 lxml
