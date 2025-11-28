@@ -7,16 +7,32 @@ from datetime import datetime
 import logging
 from pathlib import Path
 import time
+import sys
 
 
-# Configure logging
+# Configure logging with UTF-8 encoding
+file_handler = logging.FileHandler('scraper.log', encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+
+# Configure console handler with UTF-8 encoding
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.INFO)
+# Set UTF-8 encoding for console output on Windows
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # For older Python versions, create a new StreamHandler with UTF-8
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('scraper.log'),
-        logging.StreamHandler()
-    ]
+    handlers=[file_handler, console_handler]
 )
 logger = logging.getLogger(__name__)
 
@@ -27,7 +43,7 @@ class OxuAzScraper:
     def __init__(
         self,
         start_page: int = 11,
-        end_page: int = 1000,
+        end_page: int = 10000,
         max_retries: int = 3,
         retry_delay: int = 2,
         request_delay: float = 0.5,
