@@ -42,7 +42,7 @@ class OxuAzScraper:
 
     def __init__(
         self,
-        start_page: int = 11,
+        start_page: int = 1,
         end_page: int = 10000,
         max_retries: int = 3,
         retry_delay: int = 2,
@@ -66,6 +66,7 @@ class OxuAzScraper:
         }
         self.articles = []
         self.failed_pages = []
+        self.scraped_pages = set()  # Track which pages we've already scraped
         self.checkpoint_file = 'scraper_checkpoint.json'
 
     async def fetch_page(self, session: aiohttp.ClientSession, page_number: int) -> Optional[str]:
@@ -211,6 +212,17 @@ class OxuAzScraper:
             logger.error(f"Error parsing article: {str(e)}")
             return None
 
+    def _is_duplicate(self, article: Dict) -> bool:
+        """Check if article already exists (by URL)"""
+        article_url = article.get('url')
+        if not article_url:
+            return False
+
+        for existing_article in self.articles:
+            if existing_article.get('url') == article_url:
+                return True
+        return False
+
     def parse_page(self, html_content: str, page_number: int) -> List[Dict]:
         """Parse articles from a page with error handling"""
         if not html_content:
@@ -245,26 +257,46 @@ class OxuAzScraper:
     async def scrape_page(self, session: aiohttp.ClientSession, page_number: int) -> int:
         """Scrape a single page"""
         try:
+            # Skip if already scraped
+            if page_number in self.scraped_pages:
+                logger.info(f"⏭ Skipping page {page_number} (already scraped)")
+                return 0
+
             html_content = await self.fetch_page(session, page_number)
             if html_content:
                 articles = self.parse_page(html_content, page_number)
-                self.articles.extend(articles)
+
+                # Add articles with duplicate detection
+                added_count = 0
+                for article in articles:
+                    if not self._is_duplicate(article):
+                        self.articles.append(article)
+                        added_count += 1
+
+                # Mark page as scraped
+                self.scraped_pages.add(page_number)
 
                 # Save checkpoint after each successful page
                 self.save_checkpoint()
 
-                return len(articles)
+                if added_count < len(articles):
+                    logger.info(f"Added {added_count}/{len(articles)} articles (duplicates skipped)")
+
+                return added_count
             return 0
         except Exception as e:
             logger.error(f"Unexpected error scraping page {page_number}: {str(e)}")
             return 0
 
     async def scrape_all(self):
-        """Scrape all pages concurrently with error handling"""
+        """Scrape all pages in batches with error handling"""
         logger.info(f"Starting scraper from page {self.start_page} to {self.end_page}")
         logger.info("=" * 60)
 
         start_time = time.time()
+        batch_size = 50  # Process 50 pages at a time
+        consecutive_404s = 0
+        max_consecutive_404s = 5  # Stop if we hit 5 consecutive 404s
 
         try:
             # Create session with connection pooling
@@ -272,28 +304,47 @@ class OxuAzScraper:
             timeout = aiohttp.ClientTimeout(total=self.timeout)
 
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-                tasks = []
-                for page_num in range(self.start_page, self.end_page + 1):
-                    task = asyncio.create_task(self.scrape_page(session, page_num))
-                    tasks.append(task)
+                for batch_start in range(self.start_page, self.end_page + 1, batch_size):
+                    batch_end = min(batch_start + batch_size - 1, self.end_page)
 
-                # Wait for all tasks to complete
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                    logger.info(f"📦 Processing batch: pages {batch_start} to {batch_end}")
 
-                # Count successful results (ignore exceptions)
-                total_articles = sum(r for r in results if isinstance(r, int))
+                    tasks = []
+                    for page_num in range(batch_start, batch_end + 1):
+                        task = asyncio.create_task(self.scrape_page(session, page_num))
+                        tasks.append(task)
+
+                    # Wait for batch to complete
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    # Check for consecutive 404s to stop early
+                    batch_404_count = sum(1 for failed in self.failed_pages[-len(results):]
+                                        if failed.get('error') == 'Not Found')
+
+                    if batch_404_count > 0:
+                        consecutive_404s += batch_404_count
+                        if consecutive_404s >= max_consecutive_404s:
+                            logger.info(f"⚠ Stopping: {consecutive_404s} consecutive pages not found")
+                            break
+                    else:
+                        consecutive_404s = 0
 
                 elapsed_time = time.time() - start_time
+                total_articles = len(self.articles)
 
                 logger.info("=" * 60)
-                logger.info(f"Scraping complete! Total articles scraped: {total_articles}")
+                logger.info(f"Scraping complete! Total articles: {total_articles}")
+                logger.info(f"Total pages scraped: {len(self.scraped_pages)}")
                 logger.info(f"Time elapsed: {elapsed_time:.2f} seconds")
                 logger.info(f"Failed pages: {len(self.failed_pages)}")
 
                 if self.failed_pages:
-                    logger.warning("Failed pages:")
-                    for failed in self.failed_pages:
+                    logger.warning(f"Failed pages summary: {len(self.failed_pages)} pages")
+                    # Show first 10 failed pages
+                    for failed in self.failed_pages[:10]:
                         logger.warning(f"  Page {failed['page']}: {failed['error']}")
+                    if len(self.failed_pages) > 10:
+                        logger.warning(f"  ... and {len(self.failed_pages) - 10} more")
 
         except Exception as e:
             logger.error(f"Critical error during scraping: {str(e)}")
@@ -307,6 +358,7 @@ class OxuAzScraper:
             checkpoint_data = {
                 'articles': self.articles,
                 'failed_pages': self.failed_pages,
+                'scraped_pages': list(self.scraped_pages),  # Convert set to list for JSON
                 'last_updated': datetime.now().isoformat()
             }
             with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
@@ -322,7 +374,8 @@ class OxuAzScraper:
                     checkpoint_data = json.load(f)
                     self.articles = checkpoint_data.get('articles', [])
                     self.failed_pages = checkpoint_data.get('failed_pages', [])
-                    logger.info(f"Loaded checkpoint with {len(self.articles)} articles")
+                    self.scraped_pages = set(checkpoint_data.get('scraped_pages', []))  # Convert list back to set
+                    logger.info(f"✓ Loaded checkpoint with {len(self.articles)} articles from {len(self.scraped_pages)} pages")
                     return True
         except Exception as e:
             logger.error(f"Error loading checkpoint: {str(e)}")
@@ -401,10 +454,11 @@ class OxuAzScraper:
 
 async def main():
     """Main function to run the scraper"""
+    scraper = None
     try:
-        # Configure scraper
-        START_PAGE = 11
-        END_PAGE = 15  # Change this to scrape more pages
+        # Configure scraper - scrape pages 1 to 10,000
+        START_PAGE = 1
+        END_PAGE = 10000
 
         scraper = OxuAzScraper(
             start_page=START_PAGE,
@@ -414,6 +468,14 @@ async def main():
             request_delay=0.5,  # Delay between requests
             timeout=30
         )
+
+        # Load checkpoint to resume from where we left off
+        checkpoint_loaded = scraper.load_checkpoint()
+
+        if checkpoint_loaded:
+            logger.info(f"📋 Resuming scraping. Already scraped pages: {sorted(list(scraper.scraped_pages))[:10]}..." if len(scraper.scraped_pages) > 10 else f"📋 Resuming scraping. Already scraped pages: {sorted(list(scraper.scraped_pages))}")
+        else:
+            logger.info("📋 Starting fresh scraping (no checkpoint found)")
 
         # Run the scraper
         await scraper.scrape_all()
@@ -429,9 +491,10 @@ async def main():
 
     except KeyboardInterrupt:
         logger.warning("\nScraping interrupted by user")
-        logger.info("Saving current progress...")
-        scraper.save_to_json('oxu_articles_partial.json')
-        scraper.save_to_csv('oxu_articles_partial.csv')
+        if scraper:
+            logger.info("Saving current progress...")
+            scraper.save_to_json('oxu_articles_partial.json')
+            scraper.save_to_csv('oxu_articles_partial.csv')
     except Exception as e:
         logger.error(f"Fatal error: {str(e)}")
         raise
