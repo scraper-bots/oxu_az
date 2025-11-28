@@ -1,1 +1,0 @@
-pip install aiohttp beautifulsoup4 lxml
